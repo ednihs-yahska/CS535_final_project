@@ -1,0 +1,5 @@
+{"query": {"agg": 0, "sel": 2, "conds": [[0, 0, "terrence ross"]]}, "table_id": "1-10015132-16", "nlu": "What is terrence ross' nationality", "sql": "SELECT (Nationality) FROM 1-10015132-16 WHERE Player = terrence ross"}
+{"query": {"agg": 0, "sel": 5, "conds": [[4, 0, "1995-96"]]}, "table_id": "1-10015132-16", "nlu": "What clu was in toronto 1995-96", "sql": "SELECT (School/Club Team) FROM 1-10015132-16 WHERE Years in Toronto = 1995-96"}
+{"query": {"agg": 0, "sel": 5, "conds": [[4, 0, "2003-06"]]}, "table_id": "1-10015132-16", "nlu": "which club was in toronto 2003-06", "sql": "SELECT (School/Club Team) FROM 1-10015132-16 WHERE Years in Toronto = 2003-06"}
+{"query": {"agg": 3, "sel": 5, "conds": [[0, 0, "jalen rose"]]}, "table_id": "1-10015132-16", "nlu": "how many schools or teams had jalen rose", "sql": "SELECT count(School/Club Team) FROM 1-10015132-16 WHERE Player = jalen rose"}
+{"query": {"agg": 0, "sel": 3, "conds": [[3, 0, "assen"]]}, "table_id": "1-10083598-1", "nlu": "Where was Assen held?", "sql": "SELECT (Circuit) FROM 1-10083598-1 WHERE Circuit = assen OR Circuit = assen"}
