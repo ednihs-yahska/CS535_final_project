@@ -1,0 +1,15 @@
+# Load modified jsonl file to create table nodes from train, dev, test
+call apoc.load.json("file://data/mtrain.tables.jsonl") yield value
+unwind [value] as table
+call apoc.create.node([table.name], {id:table.name, split:'train'}) yield node
+return node
+
+call apoc.load.json("file://data/mdev.tables.jsonl") yield value
+unwind [value] as table
+call apoc.create.node([table.name], {id:table.name, split:'dev'}) yield node
+return node
+
+call apoc.load.json("file://data/mtest.tables.jsonl") yield value
+unwind [value] as table
+call apoc.create.node([table.name], {id:table.name, split:'test'}) yield node
+return node
