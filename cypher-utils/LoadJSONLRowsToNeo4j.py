@@ -6,13 +6,13 @@ from py2neo import Graph
 if __name__ == '__main__':
     graph = Graph(host='localhost', auth=('neo4j', 'password'))
 
-    sys.stdout = open('eval.dev.log', 'w', encoding="utf-8")
-
-    q1, q2, q3 = '', '', ''
+    q1, q3 = '', ''
     split = 'dev'
     l = 0
+
+    sys.stdout = open('eval.'+split+'.log', 'w', encoding="utf-8")
     
-    for table in jsonlines.open('dev.tables.jsonl'):
+    for table in jsonlines.open(split+'.tables.jsonl'):
         try:
             l += 1
             q1 = "call apoc.create.nodes(['" + table['name'] + "'], "
@@ -44,9 +44,9 @@ if __name__ == '__main__':
                 if i==len(table['rows'])-1:
                     q3 += ', split: "' + split + '"}]) '
             q1 += q3 + 'yield node return node'
-            print(f'{l} - {graph.run(q1)}')
+            print(f'{table["id"]} - {graph.run(q1)}')
         except:
-            print(f'{l} - {table["rows"]}')
+            print(f'{table["id"]} - {table["rows"]}')
             continue
 
     
