@@ -1,3 +1,4 @@
+import torch
 import pathlib
 import random
 import pandas as pd
@@ -5,122 +6,171 @@ import re
 from tokenizers import BertWordPieceTokenizer
 
 
-def custom_parser(lines):
-    for count, line in enumerate(lines, 1):
-
-        if count % 5 == 2:
-            nl_query = line.strip()
-
-        elif count % 5 == 3:
-            cypher_query = line.strip()
-
-        elif count % 5 == 1:
-            sql_query = line.strip()
-
-        elif count % 5 == 0:
-            yield (nl_query, sql_query, cypher_query)
-
-
-def proc_file(file_path, verbose=True):
+class WikiSQL_S2S(torch.utils.data.Dataset):
     '''
-    Parses file_path and picks natural language query & cypher query
-    Returns nlq and cq lists of equal lengths
+    Takes natural language queries, table names, column names sequence and
+    their respective Cypher queries to load, transform and return input-output
+    pairs
     '''
-    lines = file_path.read_text().splitlines()
 
-    natural_lang_queries = []
-    cypher_queries = []
-    sql_queries = []
+    def __init__(self, data_dir):
+        self.DATA_DIR = pathlib.Path(data_dir)
+        self.tables_schema = self.DATA_DIR / "tables_columns.json"
+        self.input_corpus_dir = self.DATA_DIR / "input_corpus"
+        self.output_corpus_dir = self.DATA_DIR / "output_corpus"
 
-    stream = custom_parser(lines=lines)
-    table_id_extractor = "match\(alias:([0-9\-]*)\)"
+        # data sources
+        train_src = [
+            self.DATA_DIR / "train_tok_cypher.txt",
+            self.DATA_DIR / "dev_tok_cypher.txt"
+        ]
+        test_src = [
+            self.DATA_DIR / "test_tok_cypher.txt"
+        ]
 
-    for nlq, sq, cq in stream:
+        # building corpora
+        input_corpus_files = self.generate_input_corpus(data_files=train_src)
+        output_corpus_files = self.generate_output_corpus(data_files=test_src)
 
-        # Deriving table name from cypher queries to modify SQL
-        match = re.finditer(table_id_extractor, cq).__next__()
-        table_id = match[1].replace("-", "_")
-        table_name = f'table_{table_id}'
-        sq = sq.replace(" table ", f' {table_name} ')
-
-        natural_lang_queries.append(nlq)
-        cypher_queries.append(cq)
-        sql_queries.append(sq)
-
-    assert len(natural_lang_queries) == len(cypher_queries) == len(sql_queries)
-
-    total_count = len(cypher_queries)
-    random_idx = random.randint(0, total_count - 1)
-
-    if verbose:
-        print(
-            f'Set: {file_path}\n\
-            NLQ: {natural_lang_queries[10]}\n\
-            Cypher: {cypher_queries[10]}\n\
-            SQL: {sql_queries[10]}\n\
-            Total count: {total_count}'
+        # training WordPiece tokenizers
+        self.in_tokenizer = self.train_tokenizer_from_corpus(
+            corpus_files=input_corpus_files
+        )
+        self.out_tokenizer = self.train_tokenizer_from_corpus(
+            corpus_files=output_corpus_files
         )
 
-    return natural_lang_queries, cypher_queries, sql_queries
+    def __len__(self):
+        return len(self.x)
 
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        sample = {
+            "x": self.x.iloc[idx],
+            "y": self.y.iloc[idx]
+        }
+        return sample
 
-def generate_input_corpus(data_files):
+    @staticmethod
+    def _custom_parser(lines, version):
+        '''
+        Tags each line in lines as natural_lang_query/ sql_query/ cypher_query
+        '''
+        for count, line in enumerate(lines, 1):
 
-    out_dir = DATA_DIR / "input_corpus"
+            if count % version == 2:
+                nl_query = line.strip()
 
-    # Get all natural lang queries
-    natural_lang_queries = []
-    for file in data_files:
-        nq, _, _ = proc_file(file, verbose=False)
-        natural_lang_queries += nq
+            elif count % version == 3:
+                cypher_query = line.strip()
 
-    natural_lang_queries_file_path = out_dir / "natural_lang_queries.txt"
-    with open(natural_lang_queries_file_path, "w+") as out:
-        out.write('\n'.join(natural_lang_queries))
+            elif count % version == 1:
+                sql_query = line.strip()
 
-    # All table and their coln names
-    #
+            elif count % version == 0:
+                yield (nl_query, sql_query, cypher_query)
 
-    input_corpus = [str(natural_lang_queries_file_path)]
+    def _proc_file(self, file_path, verbose=True, version=5):
+        '''
+        Parses file_path and picks natural language query & cypher query
+        Returns nlq and cq lists of equal lengths
+        '''
+        lines = file_path.read_text().splitlines()
 
-    return input_corpus
+        natural_lang_queries = []
+        cypher_queries = []
+        sql_queries = []
 
+        stream = self._custom_parser(lines=lines, version=version)
+        table_id_extractor = "match\(alias:([0-9\-]*)\)"
 
-def generate_output_corpus(data_files):
-    out_dir = DATA_DIR / "output_corpus"
+        for nlq, sq, cq in stream:
 
-    # Get all natural lang queries
-    cypher_queries = []
-    for file in data_files:
-        _, cq, _ = proc_file(file, verbose=False)
-        cypher_queries += cq
+            natural_lang_queries.append(nlq)
+            cypher_queries.append(cq)
+            sql_queries.append(sq)
 
-    cypher_queries_file_path = out_dir / "cypher_queries.txt"
-    with open(cypher_queries_file_path, "w+") as out:
-        out.write('\n'.join(cypher_queries))
+        assert len(natural_lang_queries) == len(cypher_queries) == len(sql_queries)
 
-    # All table and their coln names
-    #
+        total_count = len(cypher_queries)
+        random_idx = random.randint(0, total_count - 1)
 
-    output_corpus = [str(cypher_queries_file_path)]
+        if verbose:
+            print(
+                f'Set: {file_path}\n\
+                NLQ: {natural_lang_queries[10]}\n\
+                Cypher: {cypher_queries[10]}\n\
+                SQL: {sql_queries[10]}\n\
+                Total count: {total_count}'
+            )
 
-    return output_corpus
+        return natural_lang_queries, cypher_queries, sql_queries
 
+    def generate_input_corpus(self, data_files):
+        '''
+        Includes all content that would form a meaningful input for this dataset
+        without data leakage
+        * natural_lang_queries
+        * table_names
+        * each table's headers (column names)
+        '''
 
-def train_tokenizer_from_corpus(corpus_files):
-    tokenizer = BertWordPieceTokenizer()
-    tokenizer.train([corpus_files])
+        out_dir = self.input_corpus_dir
 
-    return tokenizer
+        # Get all natural lang queries
+        natural_lang_queries = []
+        for file in data_files:
+            nq, _, _ = self._proc_file(file, verbose=False)
+            natural_lang_queries += nq
+
+        natural_lang_queries_file_path = out_dir / "natural_lang_queries.txt"
+        with open(natural_lang_queries_file_path, "w+") as out:
+            out.write('\n'.join(natural_lang_queries))
+
+        input_corpus = [
+            str(natural_lang_queries_file_path),
+            str(self.tables_schema)
+        ]
+
+        return input_corpus
+
+    def generate_output_corpus(self, data_files):
+        '''
+        Includes all contents that could be in generated sequences
+        * cypher_queries
+        * table_names (expecting one-to-one map from input)
+        Column names are encoded as "col{n}", so just adding a
+        positional embedding to the input columns should do it
+        '''
+        out_dir = self.output_corpus_dir
+        # Get all natural lang queries
+        cypher_queries = []
+        for file in data_files:
+            _, cq, _ = self._proc_file(file, verbose=False)
+            cypher_queries += cq
+
+        cypher_queries_file_path = out_dir / "cypher_queries.txt"
+        with open(cypher_queries_file_path, "w+") as out:
+            out.write('\n'.join(cypher_queries))
+
+        output_corpus = [
+            str(cypher_queries_file_path),
+            str(self.tables_schema)
+        ]
+
+        return output_corpus
+
+    @staticmethod
+    def train_tokenizer_from_corpus(corpus_files):
+        '''
+        Returns a custom word-piece tokenizer tranined on given corpus
+        '''
+        tokenizer = BertWordPieceTokenizer()
+        tokenizer.train(corpus_files)
+
+        return tokenizer
 
 
 if __name__ == "__main__":
-    DATA_DIR = pathlib.Path("./data")
-
-    train_path = DATA_DIR / "train_tok_cypher.txt"
-    eval_path = DATA_DIR / "dev_tok_cypher.txt"
-    test_path = DATA_DIR / "test_tok_cypher.txt"
-
-    proc_file(train_path)
-    proc_file(eval_path)
-    proc_file(test_path)
+    dataset = WikiSQL_S2S(data_dir="./data")
