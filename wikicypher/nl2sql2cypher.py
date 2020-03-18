@@ -5,34 +5,60 @@ def constructHyperParameters(parser):
     args = parser.parse_args()
     return args
 
-def readFile(fileName):
-    return trainLines = [(i,line.strip('\n')) for (i, line) in enumerate(open('./data/train_tok_cypher.txt').readlines()) if line.strip('\n') != '']
+def readDataFile():
+    trainLines, devLines, testLines = [], [], []
+    dataPath = args.data
+
+    trainLines = [line.strip('\n') for (i, line) in enumerate(open(dataPath + '/train_tok_cypher.txt').readlines()) if line.strip('\n') != '']
+    devLines = [line.strip('\n') for (i, line) in enumerate(open(dataPath + '/dev_tok_cypher.txt').readlines()) if line.strip('\n') != '']
+    testLines = [line.strip('\n') for (i, line) in enumerate(open(dataPath + '/test_tok_cypher.txt').readlines()) if line.strip('\n') != '']
+
+    return trainLines, devLines, testLines
+
+def getSQLCypherQueryLines(lines):
+    sql, cypher = [], []
+    
+    for i,line in enumerate(lines):
+        if i % 3 == 0:
+            sql.append(line)
+        elif i % 3 == 2:
+            cypher.append(line)
+        else:
+            continue
+            # Do nothing for other cases
+    
+    return sql, cypher
+    
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     args = constructHyperParameters(parser)
-    print(args)
 
-    trainLines = [(i,line.strip('\n')) for (i, line) in enumerate(open('./data/train_tok_cypher.txt').readlines()) if line.strip('\n') != '']
-    devLines = [line.strip('\n') for line in open('./data/dev_tok_cypher.txt') if line.strip('\n') != '']
-    testLines = [line.strip('\n') for line in open('./data/test_tok_cypher.txt') if line.strip('\n') != '']
+    trainLines, devLines, testLines = readDataFile()
 
-    for line in trainLines[:10]:
-        print(line)
+    trainSQL, trainCypher = getSQLCypherQueryLines(trainLines)
+    devSQL, devCypher = getSQLCypherQueryLines(devLines)
+    testSQL, testCypher = getSQLCypherQueryLines(testLines)
 
-    trainSQL, devSQL, testSQL = [], [], []
-    trainCypher, devCypher, testCypher = [], [], []
+    trainSQLString, trainCypherString = '\n'.join(trainSQL), '\n'.join(trainCypher)
+    devSQLString, devCypherString = '\n'.join(devSQL), '\n'.join(devCypher)
+    testSQLString, testCypherString = '\n'.join(testSQL), '\n'.join(testCypher)
 
-    for i,line in enumerate(trainLines):
-        if i % 3 == 0:
-            trainSQL.append(line)
-        elif i % 2 == 2:
-            trainCypher.append(line)
-        else:
-            continue
-            # Do nothing for other cases
+    # with open('./data/trainsql.txt', 'w') as writeFile:
+    #     writeFile.write(trainSQLString)
 
+    # with open('./data/devsql.txt', 'w') as writeFile:
+    #     writeFile.write(devSQLString)
 
-    for line in trainSQL[:10]:
-        print(line)
-    print(trainCypher[:10])
+    # with open('./data/testsql.txt', 'w') as writeFile:
+    #     writeFile.write(testSQLString)
+
+    # with open('./data/traincypher.txt', 'w') as writeFile:
+    #     writeFile.write(trainCypherString)
+
+    # with open('./data/devcypher.txt', 'w') as writeFile:
+    #     writeFile.write(devCypherString)
+
+    # with open('./data/testcypher.txt', 'w') as writeFile:
+    #     writeFile.write(testCypherString)
+
