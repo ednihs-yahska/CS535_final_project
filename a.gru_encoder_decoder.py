@@ -64,8 +64,8 @@ def train(encoder, decoder, eoptim, doptim, loss_fn, train_loader):
     total_loss, total_accu = 0, 0
     for x, y in train_loader:
         loss, accu, encoder_hidden = _train(
-            input_tensor=x,
-            target_tensor=y,
+            input_tensor=x.cuda(),
+            target_tensor=y.cuda(),
             encoder=encoder,
             decoder=decoder,
             encoder_optimizer=eoptim,
@@ -157,7 +157,13 @@ def evaluate(encoder, encoder_hidden, decoder, eval_loader):
 
     total_loss, total_accu = 0, 0
     for x, y in eval_loader:
-        loss, accu = _evaluate(encoder, encoder_hidden, decoder, x, y)
+        loss, accu = _evaluate(
+            encoder=encoder,
+            encoder_hidden=encoder_hidden,
+            decoder=decoder,
+            x=x.cuda(),
+            y=y.cuda()
+        )
 
         total_loss += loss
         total_accu += accu
