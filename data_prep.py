@@ -1,8 +1,10 @@
 import torch
 import pathlib
 import random
+import dill as pickle
 import pandas as pd
 import re
+import json
 from tokenizers import BertWordPieceTokenizer
 
 
@@ -19,6 +21,67 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         self.input_corpus_dir = self.DATA_DIR / "input_corpus"
         self.output_corpus_dir = self.DATA_DIR / "output_corpus"
 
+        self.special_tokens = [
+            "[SOS]",
+            "[EOS]",
+            "[SEP]",
+            "[CLS]"
+        ]
+        self.build_io_tokenizers()
+        self.load_data()
+        self.form_X()
+        self.form_Y()
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        sample = (self.X[idx], self.Y[idx])
+
+        return sample
+
+    def form_X(self):
+
+        # TODO: Extract info related to table schema to replace dummies
+        self.X = []
+        for nlq in self.natural_lang_queries:
+            x_str = self.build_x_str(
+                nl_query=nlq,
+                table_name="table",
+                headers=["col0", "col1"]
+            )
+            self.X.append(self.in_tokenizer.encode(x_str))
+
+    def form_Y(self):
+
+        self.Y = []
+        for cq in self.cypher_queries:
+            y_str = self.build_y_str(c_query=cq)
+            self.Y.append(self.out_tokenizer.encode(y_str))
+
+    def build_x_str(self, nl_query, table_name, headers):
+        '''
+        [SOS][..NLQ..][SEP][...table_name...][SEP][...headers...][EOS]
+        '''
+        x_str = f'[SOS]{nl_query}[SEP]{table_name}'
+        for header in headers:
+            x_str += f'[SEP]{header}'
+        x_str += "[EOS]"
+
+        return x_str
+
+    def build_y_str(self, c_query):
+        '''
+        [SOS][...cypher_query...][EOS]
+        '''
+        y_str = f'[SOS]{c_query}[EOS]'
+
+        return y_str
+
+    def build_io_tokenizers(self):
         # data sources
         train_src = [
             self.DATA_DIR / "train_tok_cypher.txt",
@@ -36,21 +99,23 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         self.in_tokenizer = self.train_tokenizer_from_corpus(
             corpus_files=input_corpus_files
         )
+        self.in_tokenizer.add_special_tokens(self.special_tokens)
+
         self.out_tokenizer = self.train_tokenizer_from_corpus(
             corpus_files=output_corpus_files
         )
+        self.out_tokenizer.add_special_tokens(self.special_tokens)
 
-    def __len__(self):
-        return len(self.x)
+    def load_data(self):
 
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-        sample = {
-            "x": self.x.iloc[idx],
-            "y": self.y.iloc[idx]
-        }
-        return sample
+        nlq_path = self.input_corpus_dir / "natural_lang_queries.txt"
+        self.natural_lang_queries = nlq_path.read_text().splitlines()
+
+        cq_path = self.output_corpus_dir / "cypher_queries.txt"
+        self.cypher_queries = cq_path.read_text().splitlines()
+
+        with open(self.tables_schema) as in_:
+            self.tables_columns = json.load(fp=in_)
 
     @staticmethod
     def _custom_parser(lines, version):
