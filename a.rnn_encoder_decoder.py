@@ -207,24 +207,25 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
 if __name__ == "__main__":
 
     # with launch_ipdb_on_exception():
-    dataset = WikiSQL_S2S("./data", portion="eval")
+    train_datset = WikiSQL_S2S("./data", portion="eval")
+    test_dataset = WikiSQL_S2S("./data", portion="eval")
     print("WikiSQL dataset loaded.")
 
     # Name this expt for logging results in a seperate folder
-    EXPT_NAME = "default"
+    EXPT_NAME = "overfit-test"
 
     # hidden repr size and GRU N hidden units
     NUM_HIDDEN_UNITS = 256
     # Possible input vocab size
-    NUM_IN_VOCAB = dataset.in_tokenizer.get_vocab_size()
+    NUM_IN_VOCAB = train_datset.in_tokenizer.get_vocab_size()
     # Possible output vocab size
-    NUM_OUT_VOCAB = dataset.out_tokenizer.get_vocab_size()
+    NUM_OUT_VOCAB = train_datset.out_tokenizer.get_vocab_size()
     # Maximum sequence length for any input in X
-    MAX_LENGTH = dataset.MAX_SEQ_LEN
+    MAX_LENGTH = train_datset.MAX_SEQ_LEN
     # Learning rate of encoder & decoder optimizers
     LEARNING_RATE = 0.001
     # Number of epochs
-    EPOCHS = 10
+    EPOCHS = 300
 
     writer = SummaryWriter(log_dir=f'./data/log/{EXPT_NAME}')
 
@@ -237,7 +238,8 @@ if __name__ == "__main__":
         output_size=NUM_OUT_VOCAB
     ).to(device)
 
-    dataset_iterator = torch.utils.data.DataLoader(dataset, batch_size=1)
+    train_iterator = torch.utils.data.DataLoader(train_datset, batch_size=1)
+    test_iterator = torch.utils.data.DataLoader(test_dataset, batch_size=1)
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=LEARNING_RATE)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=LEARNING_RATE)
     criterion = nn.NLLLoss()
@@ -249,14 +251,14 @@ if __name__ == "__main__":
             eoptim=encoder_optimizer,
             doptim=decoder_optimizer,
             loss_fn=criterion,
-            train_loader=dataset_iterator
+            train_loader=train_iterator
         )
 
         test_loss, test_acc = evaluate(
             encoder=encoder,
             encoder_hidden=encoder_hidden,
             decoder=decoder,
-            eval_loader=dataset_iterator
+            eval_loader=test_iterator
         )
 
         writer.add_scalars("WikiSQL/train", {
