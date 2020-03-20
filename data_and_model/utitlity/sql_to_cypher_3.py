@@ -43,6 +43,9 @@ if __name__ == "__main__":
                     
             if cypher_matches:
                 table_name = cypher_matches.group("c_table_name")
+                table_name = table_name[table_name.find('-')+1:]
+                table_name = table_name.replace('-', '_')
+                table_name = table_name
                 rest = cypher_matches.group("rest_cypher")
                 sql = re.sub(r'FROM\s+table', f"FROM table_{table_name.replace('-', '_')}", sql)
                 sql_where_parts = sql.split("WHERE")
