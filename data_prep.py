@@ -1,7 +1,6 @@
 import torch
 import pathlib
 import random
-import dill as pickle
 import pandas as pd
 import re
 import json
@@ -31,6 +30,7 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         self.load_data()
         self.form_X()
         self.form_Y()
+        self.compute_max_input_sequence_length()
 
     def __len__(self):
         return len(self.X)
@@ -39,9 +39,15 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        sample = (self.X[idx], self.Y[idx])
+        sample = (
+            torch.Tensor(self.X[idx].ids).long(),
+            torch.Tensor(self.Y[idx].ids).long()
+        )
 
         return sample
+
+    def compute_max_input_sequence_length(self):
+        self.MAX_SEQ_LEN = max(map(lambda encoded_str: len(encoded_str), self.X))
 
     def form_X(self):
 
@@ -232,6 +238,7 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         Returns a custom word-piece tokenizer tranined on given corpus
         '''
         tokenizer = BertWordPieceTokenizer()
+        # tokenizer.enable_padding()
         tokenizer.train(corpus_files)
 
         return tokenizer
@@ -239,3 +246,7 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
 
 if __name__ == "__main__":
     dataset = WikiSQL_S2S(data_dir="./data")
+    dataset_iterator = torch.utils.data.DataLoader(dataset, batch_size=1)
+
+    import ipdb
+    ipdb.set_trace()
