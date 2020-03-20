@@ -1,20 +1,8 @@
-from __future__ import unicode_literals, print_function, division
-from io import open
-import unicodedata
-import string
-import re
-import random
-import time
-import math
 import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
-plt.switch_backend('agg')
-import matplotlib.ticker as ticker
-import numpy as np
-
+from torch.utils.tensorboard import SummaryWriter
 from data_prep import WikiSQL_S2S
 from ipdb import launch_ipdb_on_exception
 from tqdm import tqdm
@@ -70,56 +58,38 @@ class DecoderRNN(nn.Module):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
 
-def indexesFromSentence(lang, sentence):
-    return [lang.word2index[word] for word in sentence.split(' ')]
+def train(encoder, decoder, eoptim, doptim, loss_fn, train_loader):
+
+    # training
+    total_loss, total_accu = 0, 0
+    for x, y in train_loader:
+        loss, accu, encoder_hidden = _train(
+            input_tensor=x,
+            target_tensor=y,
+            encoder=encoder,
+            decoder=decoder,
+            encoder_optimizer=eoptim,
+            decoder_optimizer=doptim,
+            criterion=loss_fn,
+            max_length=MAX_LENGTH
+        )
+        total_loss += loss
+        total_accu += accu
+
+        norm_loss = total_loss / len(train_loader)
+        norm_accu = total_accu / len(train_loader)
+
+    return norm_loss, norm_accu, encoder_hidden
 
 
-def tensorFromSentence(lang, sentence):
-    indexes = indexesFromSentence(lang, sentence)
-    indexes.append(EOS_token)
-    return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
-
-
-def tensorsFromPair(pair):
-    input_tensor = tensorFromSentence(input_lang, pair[0])
-    target_tensor = tensorFromSentence(output_lang, pair[1])
-    return (input_tensor, target_tensor)
-
-
-def asMinutes(s):
-    m = math.floor(s / 60)
-    s -= m * 60
-    return '%dm %ds' % (m, s)
-
-
-def timeSince(since, percent):
-    now = time.time()
-    s = now - since
-    es = s / (percent)
-    rs = es - s
-    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
-
-
-def showPlot(points):
-    plt.figure()
-    fig, ax = plt.subplots()
-    # this locator puts ticks at regular intervals
-    loc = ticker.MultipleLocator(base=0.2)
-    ax.yaxis.set_major_locator(loc)
-    plt.plot(points)
-
-
-teacher_forcing_ratio = 0.5
-
-
-def train(input_tensor,
-          target_tensor,
-          encoder,
-          decoder,
-          encoder_optimizer,
-          decoder_optimizer,
-          criterion,
-          max_length):
+def _train(input_tensor,
+           target_tensor,
+           encoder,
+           decoder,
+           encoder_optimizer,
+           decoder_optimizer,
+           criterion,
+           max_length):
     encoder_hidden = encoder.initHidden()
 
     encoder_optimizer.zero_grad()
@@ -146,12 +116,16 @@ def train(input_tensor,
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
 
+        decoded_sequence = []
         for di in range(target_length):
             decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
 
             loss += criterion(decoder_output, target_tensor[0][di].unsqueeze(0))
             decoder_input = target_tensor[0][di]  # Teacher forcing
+
+            topv, topi = decoder_output.topk(1)
+            decoded_sequence.append(topi)
 
     else:
         # Without teacher forcing: use its own predictions as the next input
@@ -170,103 +144,74 @@ def train(input_tensor,
     encoder_optimizer.step()
     decoder_optimizer.step()
 
-    return loss.item() / target_length
+    accu = (target_tensor == torch.as_tensor(decoded_sequence)).sum()
+    norm_accu = accu.item() / target_length
+    norm_loss = loss.item() / target_length
+
+    return norm_loss, norm_accu, encoder_hidden
 
 
-def trainIters(encoder,
-               decoder,
-               n_iters,
-               max_length,
-               print_every=1000,
-               plot_every=100,
-               learning_rate=0.01):
-    start = time.time()
-    plot_losses = []
-    print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
+def evaluate(encoder, encoder_hidden, decoder, eval_loader):
+    encoder.eval()
+    decoder.eval()
 
-    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    training_pairs = [tensorsFromPair(random.choice(pairs))
-                      for i in range(n_iters)]
-    criterion = nn.NLLLoss()
+    total_loss, total_accu = 0, 0
+    for x, y in eval_loader:
+        loss, accu = _evaluate(encoder, encoder_hidden, decoder, x, y)
 
-    for iter in range(1, n_iters + 1):
-        training_pair = training_pairs[iter - 1]
-        input_tensor = training_pair[0]
-        target_tensor = training_pair[1]
+        total_loss += loss
+        total_accu += accu
 
-        loss = train(input_tensor, target_tensor, encoder,
-                     decoder, encoder_optimizer, decoder_optimizer, criterion, max_length)
-        print_loss_total += loss
-        plot_loss_total += loss
+    norm_loss = total_loss / len(eval_loader)
+    norm_accu = total_accu / len(eval_loader)
 
-        if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
-            print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-                                         iter, iter / n_iters * 100, print_loss_avg))
+    encoder.train()
+    decoder.train()
 
-        if iter % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
-            plot_losses.append(plot_loss_avg)
-            plot_loss_total = 0
-
-    showPlot(plot_losses)
+    return norm_loss, norm_accu
 
 
-def evaluate(encoder, decoder, sentence, max_length):
-    with torch.no_grad():
-        input_tensor = tensorFromSentence(input_lang, sentence)
-        input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden()
+def _evaluate(encoder, encoder_hidden, decoder, x, y):
 
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+    num_inputs = x.size(0)
+    target_length = y.size(1)
 
-        for ei in range(input_length):
-            encoder_output, encoder_hidden = encoder(input_tensor[ei],
-                                                     encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
+    loss = 0
 
-        decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
+    for ei in range(num_inputs):
+        encoder_output, encoder_hidden = encoder(x[ei], encoder_hidden)
 
-        decoder_hidden = encoder_hidden
+    decoder_input = torch.tensor([[SOS_token]], device=device)
 
-        decoded_words = []
-        decoder_attentions = torch.zeros(max_length, max_length)
+    decoder_hidden = encoder_hidden
 
-        for di in range(max_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-            decoder_attentions[di] = decoder_attention.data
-            topv, topi = decoder_output.data.topk(1)
-            if topi.item() == EOS_token:
-                decoded_words.append('<EOS>')
-                break
-            else:
-                decoded_words.append(output_lang.index2word[topi.item()])
+    decoded_sequence = []
+    for di in range(target_length):
+        decoder_output, decoder_hidden = decoder(
+            decoder_input, decoder_hidden)
 
-            decoder_input = topi.squeeze().detach()
+        loss += criterion(decoder_output, y[0][di].unsqueeze(0))
+        decoder_input = y[0][di]  # Teacher forcing
 
-        return decoded_words, decoder_attentions[:di + 1]
+        topv, topi = decoder_output.topk(1)
+        decoded_sequence.append(topi)
 
+    # Calculating unit NLLLoss
+    accu = (y == torch.as_tensor(decoded_sequence)).sum()
+    norm_accu = accu.item() / target_length
+    norm_loss = loss.item() / target_length
 
-def evaluateRandomly(encoder, decoder, max_length, n=10):
-    for i in range(n):
-        pair = random.choice(pairs)
-        print('>', pair[0])
-        print('=', pair[1])
-        output_words, attentions = evaluate(encoder, decoder, pair[0], max_length)
-        output_sentence = ' '.join(output_words)
-        print('<', output_sentence)
-        print('')
+    return norm_loss, norm_accu
 
 
 if __name__ == "__main__":
 
     # with launch_ipdb_on_exception():
-    dataset = WikiSQL_S2S("./data")
+    dataset = WikiSQL_S2S("./data", portion="eval")
     print("WikiSQL dataset loaded.")
+
+    # Name this expt for logging results in a seperate folder
+    EXPT_NAME = "default"
 
     # hidden repr size and GRU N hidden units
     NUM_HIDDEN_UNITS = 256
@@ -278,6 +223,10 @@ if __name__ == "__main__":
     MAX_LENGTH = dataset.MAX_SEQ_LEN
     # Learning rate of encoder & decoder optimizers
     LEARNING_RATE = 0.001
+    # Number of epochs
+    EPOCHS = 10
+
+    writer = SummaryWriter(log_dir=f'./data/log/{EXPT_NAME}')
 
     encoder = EncoderRNN(
         input_size=NUM_IN_VOCAB,
@@ -293,26 +242,28 @@ if __name__ == "__main__":
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=LEARNING_RATE)
     criterion = nn.NLLLoss()
 
-    for x, y in tqdm(dataset_iterator):
-        loss = train(
-            input_tensor=x,
-            target_tensor=y,
+    for epoch in tqdm(range(1, EPOCHS + 1)):
+        train_loss, train_acc, encoder_hidden = train(
             encoder=encoder,
             decoder=decoder,
-            encoder_optimizer=encoder_optimizer,
-            decoder_optimizer=decoder_optimizer,
-            criterion=criterion,
-            max_length=MAX_LENGTH
+            eoptim=encoder_optimizer,
+            doptim=decoder_optimizer,
+            loss_fn=criterion,
+            train_loader=dataset_iterator
         )
 
-    # trainIters(
-    #     encoder=encoder,
-    #     decoder=decoder,
-    #     n_iters=75000,
-    #     print_every=5000,
-    #     plot_every=100,
-    #     learning_rate=0.01,
-    #     max_length=MAX_LENGTH
-    # )
-    #
-    # evaluateRandomly(encoder, decoder, max_length=MAX_LENGTH)
+        test_loss, test_acc = evaluate(
+            encoder=encoder,
+            encoder_hidden=encoder_hidden,
+            decoder=decoder,
+            eval_loader=dataset_iterator
+        )
+
+        writer.add_scalars("WikiSQL/train", {
+            "loss": train_loss,
+            "accuracy": train_acc
+        }, epoch)
+        writer.add_scalars("WikiSQL/eval", {
+            "loss": test_loss,
+            "accuracy": test_acc
+        }, epoch)

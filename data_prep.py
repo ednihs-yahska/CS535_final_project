@@ -14,12 +14,12 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
     pairs
     '''
 
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, portion="train"):
         self.DATA_DIR = pathlib.Path(data_dir)
         self.tables_schema = self.DATA_DIR / "tables_columns.json"
         self.input_corpus_dir = self.DATA_DIR / "input_corpus"
         self.output_corpus_dir = self.DATA_DIR / "output_corpus"
-
+        self.train_test_ratio = 0.8
         self.special_tokens = [
             "[SOS]",
             "[EOS]",
@@ -27,10 +27,14 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
             "[CLS]"
         ]
         self.build_io_tokenizers()
-        self.load_data()
+        self.load_data(portion=portion)
         self.form_X()
         self.form_Y()
         self.compute_max_input_sequence_length()
+
+        portions = ["train", "test", "eval"]
+        if portion not in portions:
+            print(f'Not a valid portion. Choose among {portions}')
 
     def __len__(self):
         return len(self.X)
@@ -98,8 +102,12 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         ]
 
         # building corpora
-        input_corpus_files = self.generate_input_corpus(data_files=train_src)
-        output_corpus_files = self.generate_output_corpus(data_files=test_src)
+        input_corpus_files = self.generate_input_corpus(
+            data_files=train_src + test_src
+        )
+        output_corpus_files = self.generate_output_corpus(
+            data_files=train_src + test_src
+        )
 
         # training WordPiece tokenizers
         self.in_tokenizer = self.train_tokenizer_from_corpus(
@@ -112,13 +120,30 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         )
         self.out_tokenizer.add_special_tokens(self.special_tokens)
 
-    def load_data(self):
+    def load_data(self, portion):
 
         nlq_path = self.input_corpus_dir / "natural_lang_queries.txt"
         self.natural_lang_queries = nlq_path.read_text().splitlines()
 
         cq_path = self.output_corpus_dir / "cypher_queries.txt"
         self.cypher_queries = cq_path.read_text().splitlines()
+
+        assert len(self.natural_lang_queries) == len(self.cypher_queries)
+
+        train_count = int(self.train_test_ratio * len(self.cypher_queries))
+
+        if portion == "train":
+            self.natural_lang_queries = self.natural_lang_queries[:train_count]
+            self.cypher_queries = self.cypher_queries[:train_count]
+
+        elif portion == "test":
+            self.natural_lang_queries = self.natural_lang_queries[train_count:]
+            self.cypher_queries = self.cypher_queries[train_count:]
+
+        else:
+            random_idx = random.choice(range(len(self.natural_lang_queries)))
+            self.natural_lang_queries = [self.natural_lang_queries[random_idx]]
+            self.cypher_queries = [self.cypher_queries[random_idx]]
 
         with open(self.tables_schema) as in_:
             self.tables_columns = json.load(fp=in_)
