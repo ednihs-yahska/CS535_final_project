@@ -7,7 +7,8 @@ def process_where_for_sql(all_where):
         if idx%2==0:
             ops = re.split("(=|<|>|<=|>=)", conditions)
             ops[2] = "\"{}\"".format(ops[2].strip()) if ops[2] else "<NOT PROCESSED>"
-            ops = " ".join(ops)
+            ops[0] = f"alias.{ops[0].strip()}"
+            ops = " ".join(ops)            
             result.append(ops)
         else:
             result.append(conditions)
@@ -45,13 +46,16 @@ if __name__ == "__main__":
                 rest = cypher_matches.group("rest_cypher")
                 sql = re.sub(r'FROM\s+table', f"FROM table_{table_name.replace('-', '_')}", sql)
                 sql_where_parts = sql.split("WHERE")
+                
                 sql = sql_where_parts[0]+" WHERE "+process_where_for_sql(sql_where_parts[1])
+                
                 if agg:
                     cypher = f"match(alias:table_{table_name.replace('-', '_')}) where {process_where_for_sql(sql_where_parts[1])} and alias.split='{file_type}' return {agg.lower()}(alias.{select_col})"
                 else:
                     cypher = f"match(alias:table_{table_name.replace('-', '_')}) where {process_where_for_sql(sql_where_parts[1])} and alias.split='{file_type}' return alias.{select_col}"
 
-        except:
+        except Exception as e:
+            print(e)
             continue
         print(sql.strip())
         print(nl.strip())
