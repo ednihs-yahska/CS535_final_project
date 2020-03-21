@@ -37,22 +37,38 @@ class EncoderRNN(nn.Module):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
 
-class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
+class AttnDecoderRNN(nn.Module):
+    def __init__(self, hidden_size, output_size, dropout_p, max_length):
+        super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.dropout_p = dropout_p
+        self.max_length = max_length
 
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
+        self.embedding = nn.Embedding(self.output_size, self.hidden_size)
+        self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
+        self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
+        self.dropout = nn.Dropout(self.dropout_p)
+        self.gru = nn.GRU(self.hidden_size, self.hidden_size)
+        self.out = nn.Linear(self.hidden_size, self.output_size)
 
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
+    def forward(self, input, hidden, encoder_outputs):
+        embedded = self.embedding(input).view(1, 1, -1)
+        embedded = self.dropout(embedded)
+
+        attn_weights = F.softmax(
+            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
+        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
+                                 encoder_outputs.unsqueeze(0))
+
+        output = torch.cat((embedded[0], attn_applied[0]), 1)
+        output = self.attn_combine(output).unsqueeze(0)
+
         output = F.relu(output)
         output, hidden = self.gru(output, hidden)
-        output = self.softmax(self.out(output[0]))
-        return output, hidden
+
+        output = F.log_softmax(self.out(output[0]), dim=1)
+        return output, hidden, attn_weights
 
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size, device=device)
@@ -64,14 +80,13 @@ def train(encoder, decoder, eoptim, doptim, loss_fn, train_loader):
     total_loss, total_accu = 0, 0
     for x, y in train_loader:
         loss, accu, encoder_hidden = _train(
-            input_tensor=x.cuda(),
-            target_tensor=y.cuda(),
+            input_tensor=x.to(device),
+            target_tensor=y.to(device),
             encoder=encoder,
             decoder=decoder,
             encoder_optimizer=eoptim,
             decoder_optimizer=doptim,
             criterion=loss_fn,
-            max_length=MAX_LENGTH
         )
         total_loss += loss
         total_accu += accu
@@ -88,8 +103,7 @@ def _train(input_tensor,
            decoder,
            encoder_optimizer,
            decoder_optimizer,
-           criterion,
-           max_length):
+           criterion):
     encoder_hidden = encoder.initHidden()
 
     encoder_optimizer.zero_grad()
@@ -98,7 +112,11 @@ def _train(input_tensor,
     num_inputs = input_tensor.size(0)
     target_length = target_tensor.size(1)
 
-    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+    encoder_outputs = torch.zeros(
+        decoder.max_length,
+        encoder.hidden_size,
+        device=device
+    )
 
     loss = 0
 
@@ -118,8 +136,8 @@ def _train(input_tensor,
 
         decoded_sequence = []
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(
-                decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden, decoder_attention = decoder(
+                decoder_input, decoder_hidden, encoder_outputs)
 
             loss += criterion(decoder_output, target_tensor[0][di].unsqueeze(0))
             decoder_input = target_tensor[0][di]  # Teacher forcing
@@ -130,8 +148,8 @@ def _train(input_tensor,
     else:
         # Without teacher forcing: use its own predictions as the next input
         for di in range(target_length):
-            decoder_output, decoder_hidden = decoder(
-                decoder_input, decoder_hidden)
+            decoder_output, decoder_hidden, decoder_attention = decoder(
+                decoder_input, decoder_hidden, encoder_outputs)
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
@@ -144,7 +162,7 @@ def _train(input_tensor,
     encoder_optimizer.step()
     decoder_optimizer.step()
 
-    accu = (target_tensor == torch.as_tensor(decoded_sequence).cuda()).sum()
+    accu = (target_tensor == torch.as_tensor(decoded_sequence).to(device)).sum()
     norm_accu = accu.item() / target_length
     norm_loss = loss.item() / target_length
 
@@ -161,8 +179,8 @@ def evaluate(encoder, encoder_hidden, decoder, eval_loader):
             encoder=encoder,
             encoder_hidden=encoder_hidden,
             decoder=decoder,
-            x=x.cuda(),
-            y=y.cuda()
+            x=x.to(device),
+            y=y.to(device)
         )
 
         total_loss += loss
@@ -183,9 +201,15 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
     target_length = y.size(1)
 
     loss = 0
+    encoder_outputs = torch.zeros(
+        decoder.max_length,
+        encoder.hidden_size,
+        device=device
+    )
 
     for ei in range(num_inputs):
         encoder_output, encoder_hidden = encoder(x[ei], encoder_hidden)
+        encoder_outputs[ei] = encoder_output[0, 0]
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
@@ -193,8 +217,8 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
 
     decoded_sequence = []
     for di in range(target_length):
-        decoder_output, decoder_hidden = decoder(
-            decoder_input, decoder_hidden)
+        decoder_output, decoder_hidden, decoder_attention = decoder(
+            decoder_input, decoder_hidden, encoder_outputs)
 
         loss += criterion(decoder_output, y[0][di].unsqueeze(0))
         decoder_input = y[0][di]  # Teacher forcing
@@ -203,7 +227,7 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
         decoded_sequence.append(topi)
 
     # Calculating unit NLLLoss
-    accu = (y == torch.as_tensor(decoded_sequence).cuda()).sum()
+    accu = (y == torch.as_tensor(decoded_sequence).to(device)).sum()
     norm_accu = accu.item() / target_length
     norm_loss = loss.item() / target_length
 
@@ -218,8 +242,7 @@ if __name__ == "__main__":
     print("WikiSQL dataset loaded.")
 
     # Name this expt for logging results in a seperate folder
-    EXPT_NAME = "enc_dec_overfit"
-
+    EXPT_NAME = "attn_overfit"
     # hidden repr size and GRU N hidden units
     NUM_HIDDEN_UNITS = 256
     # Possible input vocab size
@@ -228,6 +251,8 @@ if __name__ == "__main__":
     NUM_OUT_VOCAB = train_datset.out_tokenizer.get_vocab_size()
     # Maximum sequence length for any input in X
     MAX_LENGTH = train_datset.MAX_SEQ_LEN
+    # Attention layer dropout proba
+    ATTN_DROPOUT = 0.1
     # Learning rate of encoder & decoder optimizers
     LEARNING_RATE = 0.001
     # Number of epochs
@@ -239,9 +264,11 @@ if __name__ == "__main__":
         input_size=NUM_IN_VOCAB,
         hidden_size=NUM_HIDDEN_UNITS
     ).to(device)
-    decoder = DecoderRNN(
+    decoder = AttnDecoderRNN(
         hidden_size=NUM_HIDDEN_UNITS,
-        output_size=NUM_OUT_VOCAB
+        output_size=NUM_OUT_VOCAB,
+        dropout_p=ATTN_DROPOUT,
+        max_length=MAX_LENGTH
     ).to(device)
 
     train_iterator = torch.utils.data.DataLoader(train_datset, batch_size=1)
