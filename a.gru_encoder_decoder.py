@@ -144,7 +144,7 @@ def _train(input_tensor,
     encoder_optimizer.step()
     decoder_optimizer.step()
 
-    accu = (target_tensor == torch.as_tensor(decoded_sequence)).sum()
+    accu = (target_tensor == torch.as_tensor(decoded_sequence).cuda()).sum()
     norm_accu = accu.item() / target_length
     norm_loss = loss.item() / target_length
 
@@ -203,7 +203,7 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
         decoded_sequence.append(topi)
 
     # Calculating unit NLLLoss
-    accu = (y == torch.as_tensor(decoded_sequence)).sum()
+    accu = (y == torch.as_tensor(decoded_sequence).cuda()).sum()
     norm_accu = accu.item() / target_length
     norm_loss = loss.item() / target_length
 
