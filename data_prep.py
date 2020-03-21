@@ -233,7 +233,7 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
             natural_lang_queries += nq
 
         natural_lang_queries_file_path = out_dir / "natural_lang_queries.txt"
-        with open(natural_lang_queries_file_path, "w+") as out:
+        with open(natural_lang_queries_file_path, "wb") as out:
             out.write('\n'.join(natural_lang_queries))
 
         input_corpus = [
@@ -259,7 +259,7 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
             cypher_queries += cq
 
         cypher_queries_file_path = out_dir / "cypher_queries.txt"
-        with open(cypher_queries_file_path, "w+") as out:
+        with open(cypher_queries_file_path, "wb") as out:
             out.write('\n'.join(cypher_queries))
 
         output_corpus = [
