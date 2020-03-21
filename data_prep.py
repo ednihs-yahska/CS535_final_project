@@ -183,7 +183,9 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         Parses file_path and picks natural language query & cypher query
         Returns nlq and cq lists of equal lengths
         '''
-        lines = file_path.read_text().splitlines()
+        lines = file_path.read_bytes().splitlines()
+        # Fix for working with python 3.6
+        lines = [line.decode("utf-8") for line in lines]
 
         natural_lang_queries = []
         cypher_queries = []
