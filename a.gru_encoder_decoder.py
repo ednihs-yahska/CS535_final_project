@@ -283,11 +283,11 @@ if __name__ == "__main__":
             eval_loader=test_iterator
         )
 
-        writer.add_scalars("SQL2Cypher/train", {
-            "loss": train_loss,
-            "accuracy": train_acc
+        writer.add_scalars("SQL2Cypher/accuracy", {
+            "train": train_acc,
+            "eval": test_acc
         }, epoch)
-        writer.add_scalars("SQL2Cypher/eval", {
-            "loss": test_loss,
-            "accuracy": test_acc
+        writer.add_scalars("SQL2Cypher/loss", {
+            "train": test_acc,
+            "eval": test_loss
         }, epoch)
