@@ -130,33 +130,16 @@ def _train(input_tensor,
 
     decoder_hidden = encoder_hidden
 
-    use_teacher_forcing = True  # if random.random() < teacher_forcing_ratio else False
+    decoded_sequence = []
+    for di in range(target_length):
+        decoder_output, decoder_hidden, decoder_attention = decoder(
+            decoder_input, decoder_hidden, encoder_outputs)
 
-    if use_teacher_forcing:
-        # Teacher forcing: Feed the target as the next input
+        loss += criterion(decoder_output, target_tensor[0][di].unsqueeze(0))
+        decoder_input = target_tensor[0][di]  # Teacher forcing
 
-        decoded_sequence = []
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-
-            loss += criterion(decoder_output, target_tensor[0][di].unsqueeze(0))
-            decoder_input = target_tensor[0][di]  # Teacher forcing
-
-            topv, topi = decoder_output.topk(1)
-            decoded_sequence.append(topi)
-
-    else:
-        # Without teacher forcing: use its own predictions as the next input
-        for di in range(target_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden, encoder_outputs)
-            topv, topi = decoder_output.topk(1)
-            decoder_input = topi.squeeze().detach()  # detach from history as input
-
-            loss += criterion(decoder_output, target_tensor[di])
-            if decoder_input.item() == EOS_token:
-                break
+        topv, topi = decoder_output.topk(1)
+        decoded_sequence.append(topi)
 
     loss.backward()
 
