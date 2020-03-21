@@ -14,13 +14,13 @@ EOS_token = 1
 
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size):
+    def __init__(self, input_size, hidden_size, embedding_size):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.embedding_size = hidden_size
+        self.embedding_size = embedding_size
 
-        self.embedding = nn.Embedding(input_size, self.embedding_size)
-        self.gru = nn.GRU(self.embedding_size, hidden_size)
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.gru = nn.GRU(embedding_size, hidden_size)
 
     def forward(self, input, hidden):
         sequence_len = input.size()[0]
@@ -38,12 +38,13 @@ class EncoderRNN(nn.Module):
 
 
 class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size):
+    def __init__(self, hidden_size, output_size, embedding_size):
         super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
+        self.embedding_size = embedding_size
 
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.embedding = nn.Embedding(output_size, self.embedding_size)
+        self.gru = nn.GRU(embedding_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
@@ -213,19 +214,32 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
 if __name__ == "__main__":
 
     # with launch_ipdb_on_exception():
-    train_datset = WikiSQL_S2S("./data", portion="train")
-    test_dataset = WikiSQL_S2S("./data", portion="test")
+    # Dataset portion
+    INCLUSION_RATIO = 0.01
+    # with launch_ipdb_on_exception():
+    train_datset = WikiSQL_S2S(
+        data_dir="./data",
+        portion="train",
+        reduced_set_perc=INCLUSION_RATIO
+    )
+    test_dataset = WikiSQL_S2S(
+        data_dir="./data",
+        portion="test",
+        reduced_set_perc=INCLUSION_RATIO
+    )
     print("WikiSQL dataset loaded.")
 
     # Name this expt for logging results in a seperate folder
     EXPT_NAME = "enc_dec"
 
     # hidden repr size and GRU N hidden units
-    NUM_HIDDEN_UNITS = 256
+    NUM_HIDDEN_UNITS = 64
     # Possible input vocab size
     NUM_IN_VOCAB = train_datset.in_tokenizer.get_vocab_size()
     # Possible output vocab size
     NUM_OUT_VOCAB = train_datset.out_tokenizer.get_vocab_size()
+    # Embedding representation size
+    EMBEDDING_UNITS = 50
     # Maximum sequence length for any input in X
     MAX_LENGTH = train_datset.MAX_SEQ_LEN
     # Learning rate of encoder & decoder optimizers
@@ -237,11 +251,13 @@ if __name__ == "__main__":
 
     encoder = EncoderRNN(
         input_size=NUM_IN_VOCAB,
-        hidden_size=NUM_HIDDEN_UNITS
+        hidden_size=NUM_HIDDEN_UNITS,
+        embedding_size=EMBEDDING_UNITS
     ).to(device)
     decoder = DecoderRNN(
         hidden_size=NUM_HIDDEN_UNITS,
-        output_size=NUM_OUT_VOCAB
+        output_size=NUM_OUT_VOCAB,
+        embedding_size=EMBEDDING_UNITS
     ).to(device)
 
     train_iterator = torch.utils.data.DataLoader(train_datset, batch_size=1)

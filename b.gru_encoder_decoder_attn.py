@@ -14,13 +14,13 @@ EOS_token = 1
 
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size):
+    def __init__(self, input_size, hidden_size, embedding_size):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.embedding_size = hidden_size
+        self.embedding_size = embedding_size
 
-        self.embedding = nn.Embedding(input_size, self.embedding_size)
-        self.gru = nn.GRU(self.embedding_size, hidden_size)
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.gru = nn.GRU(embedding_size, hidden_size)
 
     def forward(self, input, hidden):
         sequence_len = input.size()[0]
@@ -38,10 +38,11 @@ class EncoderRNN(nn.Module):
 
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, dropout_p, max_length):
+    def __init__(self, hidden_size, output_size, dropout_p, max_length, embedding_size):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.output_size = output_size
+        self.embedding_size = embedding_size
         self.dropout_p = dropout_p
         self.max_length = max_length
 
@@ -78,7 +79,7 @@ def train(encoder, decoder, eoptim, doptim, loss_fn, train_loader):
 
     # training
     total_loss, total_accu = 0, 0
-    for x, y in train_loader:
+    for x, y in tqdm(train_loader):
         loss, accu, encoder_hidden = _train(
             input_tensor=x.to(device),
             target_tensor=y.to(device),
@@ -174,7 +175,7 @@ def evaluate(encoder, encoder_hidden, decoder, eval_loader):
     decoder.eval()
 
     total_loss, total_accu = 0, 0
-    for x, y in eval_loader:
+    for x, y in tqdm(eval_loader):
         loss, accu = _evaluate(
             encoder=encoder,
             encoder_hidden=encoder_hidden,
@@ -236,19 +237,31 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
 
 if __name__ == "__main__":
 
+    # Dataset portion
+    INCLUSION_RATIO = 0.01
     # with launch_ipdb_on_exception():
-    train_datset = WikiSQL_S2S("./data", portion="train")
-    test_dataset = WikiSQL_S2S("./data", portion="test")
+    train_datset = WikiSQL_S2S(
+        data_dir="./data",
+        portion="train",
+        reduced_set_perc=INCLUSION_RATIO
+    )
+    test_dataset = WikiSQL_S2S(
+        data_dir="./data",
+        portion="test",
+        reduced_set_perc=INCLUSION_RATIO
+    )
     print("WikiSQL dataset loaded.")
 
     # Name this expt for logging results in a seperate folder
     EXPT_NAME = "attn"
     # hidden repr size and GRU N hidden units
-    NUM_HIDDEN_UNITS = 256
+    NUM_HIDDEN_UNITS = 64
     # Possible input vocab size
     NUM_IN_VOCAB = train_datset.in_tokenizer.get_vocab_size()
     # Possible output vocab size
     NUM_OUT_VOCAB = train_datset.out_tokenizer.get_vocab_size()
+    # Embedding representation size
+    EMBEDDING_UNITS = 50
     # Maximum sequence length for any input in X
     MAX_LENGTH = train_datset.MAX_SEQ_LEN
     # Attention layer dropout proba
@@ -262,13 +275,15 @@ if __name__ == "__main__":
 
     encoder = EncoderRNN(
         input_size=NUM_IN_VOCAB,
-        hidden_size=NUM_HIDDEN_UNITS
+        hidden_size=NUM_HIDDEN_UNITS,
+        embedding_size=EMBEDDING_UNITS
     ).to(device)
     decoder = AttnDecoderRNN(
         hidden_size=NUM_HIDDEN_UNITS,
         output_size=NUM_OUT_VOCAB,
         dropout_p=ATTN_DROPOUT,
-        max_length=MAX_LENGTH
+        max_length=MAX_LENGTH,
+        embedding_size=EMBEDDING_UNITS
     ).to(device)
 
     train_iterator = torch.utils.data.DataLoader(train_datset, batch_size=1)
