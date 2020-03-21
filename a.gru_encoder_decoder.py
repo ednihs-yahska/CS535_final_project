@@ -198,7 +198,7 @@ if __name__ == "__main__":
 
     # with launch_ipdb_on_exception():
     # Dataset portion
-    INCLUSION_RATIO = 0.01
+    INCLUSION_RATIO = 0.10
     # with launch_ipdb_on_exception():
     train_datset = WikiSQL_S2S(
         data_dir="./data",
