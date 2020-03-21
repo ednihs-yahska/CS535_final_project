@@ -14,7 +14,7 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
     pairs
     '''
 
-    def __init__(self, data_dir, portion="train"):
+    def __init__(self, data_dir, portion="train", reduced_set_perc=0.01):
         self.DATA_DIR = pathlib.Path(data_dir)
         self.tables_schema = self.DATA_DIR / "tables_columns.json"
         self.input_corpus_dir = self.DATA_DIR / "input_corpus"
@@ -28,8 +28,8 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         ]
         self.build_io_tokenizers()
         self.load_data(portion=portion)
-        self.form_X()
-        self.form_Y()
+        self.form_X(reduced_set_perc)
+        self.form_Y(reduced_set_perc)
         self.compute_max_input_sequence_length()
 
         portions = ["train", "test", "eval"]
@@ -60,9 +60,8 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
 
         return table_name, self.tables_columns[table_name]
 
-    def form_X(self):
+    def form_X(self, reduced_set_perc):
 
-        # TODO: Extract info related to table schema to replace dummies
         self.X = []
         nlq_cq_pairs = zip(*[self.natural_lang_queries, self.cypher_queries])
         for nlq, cq in nlq_cq_pairs:
@@ -76,12 +75,20 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
             )
             self.X.append(self.in_tokenizer.encode(x_str))
 
-    def form_Y(self):
+        reduced_x_count = int(reduced_set_perc * len(self.X))
+        print(f'Keeping {reduced_x_count}/{len(self.X)} inputs')
+        self.X = self.X[:reduced_x_count]
+
+    def form_Y(self, reduced_set_perc):
 
         self.Y = []
         for cq in self.cypher_queries:
             y_str = self.build_y_str(c_query=cq)
             self.Y.append(self.out_tokenizer.encode(y_str))
+
+        reduced_y_count = int(reduced_set_perc * len(self.Y))
+        print(f'Keeping {reduced_y_count}/{len(self.Y)} targets')
+        self.Y = self.Y[:reduced_y_count]
 
     def build_x_str(self, nl_query, table_name, headers):
         '''

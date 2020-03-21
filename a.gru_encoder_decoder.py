@@ -62,10 +62,10 @@ def train(encoder, decoder, eoptim, doptim, loss_fn, train_loader):
 
     # training
     total_loss, total_accu = 0, 0
-    for x, y in train_loader:
+    for x, y in tqdm(train_loader):
         loss, accu, encoder_hidden = _train(
-            input_tensor=x.cuda(),
-            target_tensor=y.cuda(),
+            input_tensor=x.to(device),
+            target_tensor=y.to(device),
             encoder=encoder,
             decoder=decoder,
             encoder_optimizer=eoptim,
@@ -144,7 +144,7 @@ def _train(input_tensor,
     encoder_optimizer.step()
     decoder_optimizer.step()
 
-    accu = (target_tensor == torch.as_tensor(decoded_sequence).cuda()).sum()
+    accu = (target_tensor == torch.as_tensor(decoded_sequence).to(device)).sum()
     norm_accu = accu.item() / target_length
     norm_loss = loss.item() / target_length
 
@@ -156,13 +156,13 @@ def evaluate(encoder, encoder_hidden, decoder, eval_loader):
     decoder.eval()
 
     total_loss, total_accu = 0, 0
-    for x, y in eval_loader:
+    for x, y in tqdm(eval_loader):
         loss, accu = _evaluate(
             encoder=encoder,
             encoder_hidden=encoder_hidden,
             decoder=decoder,
-            x=x.cuda(),
-            y=y.cuda()
+            x=x.to(device),
+            y=y.to(device)
         )
 
         total_loss += loss
@@ -203,7 +203,7 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
         decoded_sequence.append(topi)
 
     # Calculating unit NLLLoss
-    accu = (y == torch.as_tensor(decoded_sequence).cuda()).sum()
+    accu = (y == torch.as_tensor(decoded_sequence).to(device)).sum()
     norm_accu = accu.item() / target_length
     norm_loss = loss.item() / target_length
 
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     print("WikiSQL dataset loaded.")
 
     # Name this expt for logging results in a seperate folder
-    EXPT_NAME = "enc_dec_overfit"
+    EXPT_NAME = "enc_dec"
 
     # hidden repr size and GRU N hidden units
     NUM_HIDDEN_UNITS = 256

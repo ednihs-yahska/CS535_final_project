@@ -242,7 +242,7 @@ if __name__ == "__main__":
     print("WikiSQL dataset loaded.")
 
     # Name this expt for logging results in a seperate folder
-    EXPT_NAME = "attn_overfit"
+    EXPT_NAME = "attn"
     # hidden repr size and GRU N hidden units
     NUM_HIDDEN_UNITS = 256
     # Possible input vocab size
