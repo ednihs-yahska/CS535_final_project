@@ -63,13 +63,13 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
     def form_X(self, reduced_set_perc):
 
         self.X = []
-        nlq_cq_pairs = zip(*[self.natural_lang_queries, self.cypher_queries])
-        for nlq, cq in nlq_cq_pairs:
+        nlq_cq_pairs = zip(*[self.sql_queries, self.cypher_queries])
+        for sql, cq in nlq_cq_pairs:
             table_name, headers = self.cypher_query_to_table_and_col_names(
                 cypher_query=cq
             )
             x_str = self.build_x_str(
-                nl_query=nlq,
+                nl_query=sql,
                 table_name=table_name,
                 headers=headers
             )
@@ -140,27 +140,27 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
 
     def load_data(self, portion):
 
-        nlq_path = self.input_corpus_dir / "natural_lang_queries.txt"
-        self.natural_lang_queries = nlq_path.read_text().splitlines()
+        nlq_path = self.input_corpus_dir / "sql_queries.txt"
+        self.sql_queries = nlq_path.read_text().splitlines()
 
         cq_path = self.output_corpus_dir / "cypher_queries.txt"
         self.cypher_queries = cq_path.read_text().splitlines()
 
-        assert len(self.natural_lang_queries) == len(self.cypher_queries)
+        assert len(self.sql_queries) == len(self.cypher_queries)
 
         train_count = int(self.train_test_ratio * len(self.cypher_queries))
 
         if portion == "train":
-            self.natural_lang_queries = self.natural_lang_queries[:train_count]
+            self.sql_queries = self.sql_queries[:train_count]
             self.cypher_queries = self.cypher_queries[:train_count]
 
         elif portion == "test":
-            self.natural_lang_queries = self.natural_lang_queries[train_count:]
+            self.sql_queries = self.sql_queries[train_count:]
             self.cypher_queries = self.cypher_queries[train_count:]
 
         else:
-            random_idx = random.choice(range(len(self.natural_lang_queries)))
-            self.natural_lang_queries = [self.natural_lang_queries[random_idx]]
+            random_idx = random.choice(range(len(self.sql_queries)))
+            self.sql_queries = [self.sql_queries[random_idx]]
             self.cypher_queries = [self.cypher_queries[random_idx]]
 
         with open(self.tables_schema) as in_:
@@ -226,7 +226,7 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         '''
         Includes all content that would form a meaningful input for this dataset
         without data leakage
-        * natural_lang_queries
+        * sql_queries
         * table_names
         * each table's headers (column names)
         '''
@@ -234,18 +234,18 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         out_dir = self.input_corpus_dir
 
         # Get all natural lang queries
-        natural_lang_queries = []
+        sql_queries = []
         for file in data_files:
-            nq, _, _ = self._proc_file(file, verbose=False)
-            natural_lang_queries += nq
+            _, _, sq = self._proc_file(file, verbose=False)
+            sql_queries += sq
 
-        natural_lang_queries_file_path = out_dir / "natural_lang_queries.txt"
-        with open(natural_lang_queries_file_path, "w+") as out:
-            natural_lang_queries = [nlq + "\n" for nlq in natural_lang_queries]
-            out.writelines(natural_lang_queries)
+        sql_queries_file_path = out_dir / "sql_queries.txt"
+        with open(sql_queries_file_path, "w+") as out:
+            sql_queries = [sql + "\n" for sql in sql_queries]
+            out.writelines(sql_queries)
 
         input_corpus = [
-            str(natural_lang_queries_file_path),
+            str(sql_queries_file_path),
             str(self.tables_schema)
         ]
 

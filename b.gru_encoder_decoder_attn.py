@@ -309,11 +309,11 @@ if __name__ == "__main__":
             eval_loader=test_iterator
         )
 
-        writer.add_scalars("WikiSQL/train", {
+        writer.add_scalars("SQL2Cypher/train", {
             "loss": train_loss,
             "accuracy": train_acc
         }, epoch)
-        writer.add_scalars("WikiSQL/eval", {
+        writer.add_scalars("SQL2Cypher/eval", {
             "loss": test_loss,
             "accuracy": test_acc
         }, epoch)
