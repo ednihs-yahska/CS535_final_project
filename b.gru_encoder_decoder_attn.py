@@ -314,6 +314,6 @@ if __name__ == "__main__":
             "eval": test_acc
         }, epoch)
         writer.add_scalars("SQL2Cypher/loss", {
-            "train": test_acc,
+            "train": train_loss,
             "eval": test_loss
         }, epoch)
