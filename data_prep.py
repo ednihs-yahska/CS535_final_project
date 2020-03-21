@@ -53,15 +53,26 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
     def compute_max_input_sequence_length(self):
         self.MAX_SEQ_LEN = max(map(lambda encoded_str: len(encoded_str), self.X))
 
+    def cypher_query_to_table_and_col_names(self, cypher_query):
+        table_id_extractor = "match\(alias:([0-9\-]*)\)"
+        table_id = list(re.finditer(table_id_extractor, cypher_query))[0].group(1)
+        table_name = f'table_{table_id.replace("-", "_")}'
+
+        return table_name, self.tables_columns[table_name]
+
     def form_X(self):
 
         # TODO: Extract info related to table schema to replace dummies
         self.X = []
-        for nlq in self.natural_lang_queries:
+        nlq_cq_pairs = zip(*[self.natural_lang_queries, self.cypher_queries])
+        for nlq, cq in nlq_cq_pairs:
+            table_name, headers = self.cypher_query_to_table_and_col_names(
+                cypher_query=cq
+            )
             x_str = self.build_x_str(
                 nl_query=nlq,
-                table_name="table",
-                headers=["col0", "col1"]
+                table_name=table_name,
+                headers=headers
             )
             self.X.append(self.in_tokenizer.encode(x_str))
 
@@ -179,7 +190,6 @@ class WikiSQL_S2S(torch.utils.data.Dataset):
         sql_queries = []
 
         stream = self._custom_parser(lines=lines, version=version)
-        table_id_extractor = "match\(alias:([0-9\-]*)\)"
 
         for nlq, sq, cq in stream:
 
