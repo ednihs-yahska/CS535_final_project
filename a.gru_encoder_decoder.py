@@ -213,8 +213,8 @@ def _evaluate(encoder, encoder_hidden, decoder, x, y):
 if __name__ == "__main__":
 
     # with launch_ipdb_on_exception():
-    train_datset = WikiSQL_S2S("./data", portion="eval")
-    test_dataset = WikiSQL_S2S("./data", portion="eval")
+    train_datset = WikiSQL_S2S("./data", portion="train")
+    test_dataset = WikiSQL_S2S("./data", portion="test")
     print("WikiSQL dataset loaded.")
 
     # Name this expt for logging results in a seperate folder
